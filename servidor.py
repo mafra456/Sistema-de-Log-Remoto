@@ -30,15 +30,90 @@ import random
 import socket
 import hashlib
 import sys
-
+import threading
 
 
 def create_md5(message):
-	return hashlib.md5(message.encode('ascii')).hexdigest()
+	return hashlib.md5(message.encode('ascii')).digest()
 
 
 def valid_md5(message, md5):
 	return create_md5(message) == md5
+
+# Função dummy para motivos de testes
+def send_ACK(seqnum):
+	print("ACK #{} enviado".format(seqnum))
+
+def print_to_output_file(message):
+	print("Printing {} to file {}".format(message, sys.argv[1]))
+	f.write(message + '\n')
+
+# Representa o recebimento de uma mensagem e sua validação
+def receive_message(seqnum, message, md5):
+	global RWS
+	global NFE
+	global SW
+	global LFA
+	print("")
+	print("Mensagem #{} recebida no servidor: {}".format(seqnum, message))
+	print("RWS: {} NFE: {} LFA: {} SW: {}".format(RWS, NFE, LFA, SW))
+	# A mensagem só é relevante para nós se seu seqnum está dentro da janela e seu md5 é válido. Caso contrário, ela é descartada.
+	if(valid_md5(message, md5) and (seqnum >= NFE and seqnum <= LFA)):
+		
+		# Adicionamos a mensagem na janela
+		SW[seqnum] = message
+		print("Mensagem #{} adicionada à janela.".format(seqnum))
+
+		# Se o NFE agora tem uma mensagme, andamos com a janela.
+		while(SW[NFE] != ""):
+			NFE = NFE + 1
+			LFA = LFA + 1
+			SW.append("")
+			print_to_output_file(message)
+			print("Janela movida: {} – {} -> {} – {}".format(NFE-1, LFA-1, NFE, LFA))
+
+		# Printa nova janela
+		print("RWS: {} NFE: {} LFA: {} SW: {}".format(RWS, NFE, LFA, SW))
+
+		# Retornamos True para indicar que a mensagem foi válida (md5 correto e permitida na range da janela)
+		return True
+
+	# Retornamos False se a mensagem foi descartada
+	return False
+
+
+def client_worker(client_socket, request):
+	print("\n\nrequest CRUA recebida: {}".format(request))
+	seqnum = int.from_bytes(request[:8], byteorder='big')
+	sec = int.from_bytes(request[8:16], byteorder='big')
+	nsec = int.from_bytes(request[16:20], byteorder='big')
+	sz = int.from_bytes(request[20:22], byteorder='big')
+	message = (request[22:22+sz]).decode('ascii')
+	md5 = (request[(22+sz):22+sz+16])#.decode('ascii')
+
+	print("Request recebida @{}:\n seqnum: {} \n sec: {} \n nsec: {} \n sz: {} \n message: {} \n md5: {} ".format(client_socket, seqnum, sec, nsec, sz, message, md5))
+
+	# Se a mensagem foi recebida com sucesso, enviamos a confirmação
+	if(receive_message(seqnum, message, md5) == True):
+		int_seqnum = seqnum
+		seqnum = (seqnum).to_bytes(8, byteorder = 'big')
+		sec = (sec).to_bytes(8, byteorder = 'big')
+		nsec = (nsec).to_bytes(4, byteorder = 'big')
+		
+		
+
+
+		#udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
+		#udp.connect(("127.0.0.1", 5000))
+		
+
+		print("seqnum bytes: {}".format(seqnum))
+
+		# Criamos o pacote concatenando os bytes e convertendo as duas string p bytes
+		package = seqnum + sec + nsec + md5
+		print("Package a ser enviado p cliente: {}".format(package))
+		print("ACK #{} enviado para cliente".format(int_seqnum))
+		server_socket.sendto(package, client_socket)
 
 
 
@@ -50,32 +125,35 @@ print(sys.argv)
 port = int(port)
 Wrx = int(Wrx)
 Perror = float(Perror)
+f = open(output,'w')
+
+# Receptor Window Size (Tamanho da janela)
+RWS = Wrx
+
+# Next Frame Expected (Primeiro quadro da janela)
+NFE = 0
+
+# Last Frame Acceptable (Último quadro da janela)
+LFA = NFE + RWS - 1
+
+# Janela
+SW = [""] * RWS
 
 
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server_socket.bind(('', port))
+client_list = []
 
 
-#UNCOMMENT while True:
-# TO DO Recebe conexão do cliente 
-#UNCOMMENT message, address = server_socket.recvfrom(1024)
+# Aceita conexões c/ Threads
+while True:
+	request, client_socket = server_socket.recvfrom(16422)
+	t = threading.Thread(target=client_worker, args=(client_socket, request, ))
+	client_list.append(t)
+	t.start()
+	
 
 
-# Decodifica mensagem do cliente
-message = "bla bla bla 123 123 lorem ipsum"
-seqnum = 1
-sec = 1536451863
-nsec = 515483
-sz = 31
-md5 = "677f7c58069d8c3293f9ff8214b15303"
-
-# Checa MD5
-if(valid_md5(message, md5)):	
-	# Se o MD5 é válido, enviamos ack
-
-	# E depois ashli
-
-# TO DO Envia resposta a cliente
 # server_socket.sendto(message, address)
 
 
