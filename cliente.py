@@ -12,7 +12,7 @@ global LFS
 global SW
 
 def create_md5(message):
-	return hashlib.md5(message.encode('ascii')).digest()
+	return hashlib.md5(message.encode('utf-8')).digest()
 
 def valid_md5(message, md5):
 	return create_md5(message) == md5
@@ -98,7 +98,7 @@ def main():
             n_distinct_logs = n_distinct_logs + 1
             n_sent_logs = n_sent_logs + 1
 
-            response, address = udp.recv(36).decode('ascii')
+            response, address = udp.recv(36).decode('utf-8')
             md5 = response[20:36]
 
             if(valid_md5(message, md5)):

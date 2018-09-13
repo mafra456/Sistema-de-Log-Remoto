@@ -8,7 +8,7 @@ o primeiro inteiro representa a quantidade de segundos desde a data de referênc
 
 INT 2 bytes - Tamanho da mensagem
 
-String ASCII Mensagem – Deve ser menor que 2^14 bytes
+String utf-8 Mensagem – Deve ser menor que 2^14 bytes
 hash MD5 16 bytes - calculador sobre os 4campos antreriores
 
 
@@ -34,7 +34,7 @@ import threading
 
 
 def create_md5(message):
-	return hashlib.md5(message.encode('ascii')).digest()
+	return hashlib.md5(message.encode('utf-8')).digest()
 
 
 def valid_md5(message, md5):
@@ -58,8 +58,11 @@ def receive_message(seqnum, message, md5):
 	print("Mensagem #{} recebida no servidor: {}".format(seqnum, message))
 	print("RWS: {} NFE: {} LFA: {} SW: {}".format(RWS, NFE, LFA, SW))
 	# A mensagem só é relevante para nós se seu seqnum está dentro da janela e seu md5 é válido. Caso contrário, ela é descartada.
-	if(valid_md5(message, md5) and (seqnum >= NFE and seqnum <= LFA)):
-		
+	#if(valid_md5(message, md5) and (seqnum >= NFE and seqnum <= LFA)):
+	if(valid_md5(message, md5) and (seqnum <= LFA)):
+		# Se a mensagem já foi ack, simplesmente retornamos True pra reenviar o ACK
+		if(seqnum < NFE):
+			return True
 		# Adicionamos a mensagem na janela
 		SW[seqnum] = message
 		print("Mensagem #{} adicionada à janela.".format(seqnum))
@@ -88,8 +91,8 @@ def client_worker(client_socket, request):
 	sec = int.from_bytes(request[8:16], byteorder='big')
 	nsec = int.from_bytes(request[16:20], byteorder='big')
 	sz = int.from_bytes(request[20:22], byteorder='big')
-	message = (request[22:22+sz]).decode('ascii')
-	md5 = (request[(22+sz):22+sz+16])#.decode('ascii')
+	message = (request[22:22+sz]).decode('utf-8')
+	md5 = (request[(22+sz):22+sz+16])#.decode('utf-8')
 
 	print("Request recebida @{}:\n seqnum: {} \n sec: {} \n nsec: {} \n sz: {} \n message: {} \n md5: {} ".format(client_socket, seqnum, sec, nsec, sz, message, md5))
 
