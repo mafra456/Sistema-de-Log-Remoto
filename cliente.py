@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: latin1 -*-
 import socket
 import sys
 import struct
@@ -12,23 +12,27 @@ global LFS
 global SW
 
 def create_md5(message):
-	return hashlib.md5(message.encode('utf-8')).digest()
+    return hashlib.md5(message.encode('latin1')).digest()
+
 
 def valid_md5(message, md5):
-	return create_md5(message) == md5
+    return create_md5(message) == md5
 
-def returnSecNsec():
-    diff = time.time()
-    sec, nsec = diff // 3600, diff % 3600
-    return sec, nsec
 
-def createPackage(seqnum, sec, nsec, size_message, message):
-    m = hashlib.md5()
-    fields = str(seqnum) + str(sec) + str(nsec) + str(size_message) + message
-    fields = fields.encode('latin1')
-    m.update(fields)
-    md5 = m.digest()
-    package = fields + md5
+def createPackage(seqnum, message):
+
+    seqnum = (seqnum).to_bytes(8, byteorder = 'big')
+    sec,nsec = str(time.time()).split('.')
+
+    sec = int(sec)
+    nsec = int(nsec)
+
+    sec = (sec).to_bytes(8, byteorder = 'big')
+    nsec = (nsec).to_bytes(4, byteorder = 'big')
+    sz = (len(message)).to_bytes(2, byteorder = 'big')
+    hashed_md5 = create_md5(message)
+    package = seqnum + sec + nsec + sz + message.encode('ascii') + hashed_md5
+    
     return package
 def returnTuple(dest):
     #...
@@ -89,27 +93,28 @@ def main():
         udp.connect(dest)
         print('Conectado! Para sair, use CTRL+X\n')
         for line in file:
-            sec,nsec = returnSecNsec()
             message = line
-            size_message = len(message)
-            package = createPackage(seqnum, sec, nsec, size_message, message)
+            package = createPackage(seqnum, message)
             udp.send(package)
 
             n_distinct_logs = n_distinct_logs + 1
             n_sent_logs = n_sent_logs + 1
 
-            response, address = udp.recv(36).decode('utf-8')
-            md5 = response[20:36]
+            response, address = udp.recvfrom(36)
+
+            md5 = (response[20:36])#.decode('ascii')
 
             if(valid_md5(message, md5)):
                 res_seqnum = int.from_bytes(response[:8], byteorder='big')
+                res_sec = int.from_bytes(response[8:16], byteorder='big')
+                res_nsec = int.from_bytes(response[16:20], byteorder='big')
                 print("ACK #{} recebido".format(res_seqnum)) 
             else:
                 n_failed_md5_logs = n_failed_md5_logs + 1
 
             seqnum = seqnum + 1
             
-            print(n_distinct_logs + " " + n_sent_logs + " " + n_failed_md5_logs + " %.3f"%(time.time()-t_start))
+            #print(n_distinct_logs + " " + n_sent_logs + " " + n_failed_md5_logs + " %.3f"%(time.time()-t_start))
     except(socket.timeout):
         print("Tempo limite de conexão excedido")
         pass
@@ -117,6 +122,5 @@ def main():
 if __name__ == "__main__":
     main()
     print ("Término da execução")
-
-    #python3 sw_client.py log.txt 127.0.0.1:5000 5 10 0.85
+    #python3 cliente.py input.txt 127.0.0.1:5000 5 10 0.85
 

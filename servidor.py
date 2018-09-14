@@ -8,7 +8,7 @@ o primeiro inteiro representa a quantidade de segundos desde a data de referênc
 
 INT 2 bytes - Tamanho da mensagem
 
-String utf-8 Mensagem – Deve ser menor que 2^14 bytes
+String latin1 Mensagem – Deve ser menor que 2^14 bytes
 hash MD5 16 bytes - calculador sobre os 4campos antreriores
 
 
@@ -34,7 +34,7 @@ import threading
 
 
 def create_md5(message):
-	return hashlib.md5(message.encode('utf-8')).digest()
+	return hashlib.md5(message.encode('latin1')).digest()
 
 
 def valid_md5(message, md5):
@@ -45,8 +45,9 @@ def send_ACK(seqnum):
 	print("ACK #{} enviado".format(seqnum))
 
 def print_to_output_file(message):
+	global f
 	print("Printing {} to file {}".format(message, sys.argv[1]))
-	f.write(message + '\n')
+	f.write(message)
 
 # Representa o recebimento de uma mensagem e sua validação
 def receive_message(seqnum, message, md5):
@@ -91,8 +92,8 @@ def client_worker(client_socket, request):
 	sec = int.from_bytes(request[8:16], byteorder='big')
 	nsec = int.from_bytes(request[16:20], byteorder='big')
 	sz = int.from_bytes(request[20:22], byteorder='big')
-	message = (request[22:22+sz]).decode('utf-8')
-	md5 = (request[(22+sz):22+sz+16])#.decode('utf-8')
+	message = (request[22:22+sz]).decode('latin1')
+	md5 = (request[(22+sz):22+sz+16])#.decode('latin1')
 
 	print("Request recebida @{}:\n seqnum: {} \n sec: {} \n nsec: {} \n sz: {} \n message: {} \n md5: {} ".format(client_socket, seqnum, sec, nsec, sz, message, md5))
 
