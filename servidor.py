@@ -25,13 +25,13 @@ Se sucesso:
 
 ''' 
 
-# python3 servidor.py output.txt 5000 4 0.5
+# python3 servidor.py output.txt 5000 5 0.85
 import random
 import socket
 import hashlib
 import sys
 import threading
-
+import pdb
 
 def create_md5(message):
 	return hashlib.md5(message.encode('latin1')).digest()
@@ -63,6 +63,7 @@ def receive_message(seqnum, message, md5):
 	if(valid_md5(message, md5) and (seqnum <= LFA)):
 		# Se a mensagem já foi ack, simplesmente retornamos True pra reenviar o ACK
 		if(seqnum < NFE):
+			print("Mensagem já ACK. Retornamos True")
 			return True
 		# Adicionamos a mensagem na janela
 		SW[seqnum] = message
@@ -83,11 +84,17 @@ def receive_message(seqnum, message, md5):
 		return True
 
 	# Retornamos False se a mensagem foi descartada
+	if(valid_md5(message, md5) == False):
+		print("ERRO: MD5 inválido")
+	if(seqnum > LFA):
+		print("ERRO: SeqNum ({}) > LFA({})".format(seqnum, LFA))
 	return False
 
 
 def client_worker(client_socket, request):
-	print("\n\nrequest CRUA recebida: {}".format(request))
+	global Perror
+
+	#print("\n\nrequest CRUA recebida: {}".format(request))
 	seqnum = int.from_bytes(request[:8], byteorder='big')
 	sec = int.from_bytes(request[8:16], byteorder='big')
 	nsec = int.from_bytes(request[16:20], byteorder='big')
@@ -111,11 +118,18 @@ def client_worker(client_socket, request):
 		#udp.connect(("127.0.0.1", 5000))
 		
 
-		print("seqnum bytes: {}".format(seqnum))
+		#print("seqnum bytes: {}".format(seqnum))
+
+		
+		# Aqui forcamos um erro baseado em probabilidade. Caso o md5 deva ser enviado errado, simplesmente tiramos o md5 do md5 
+		if(random.random() <= Perror):
+			print("Erro forcado p error MD5: {}".format(md5))
+			md5 = (1231231231231231).to_bytes(16, byteorder = 'big')
+			print("Erro forcado p error MD5: {}".format(md5))
 
 		# Criamos o pacote concatenando os bytes e convertendo as duas string p bytes
 		package = seqnum + sec + nsec + md5
-		print("Package a ser enviado p cliente: {}".format(package))
+		#print("Package a ser enviado p cliente: {}".format(package))
 		print("ACK #{} enviado para cliente".format(int_seqnum))
 		server_socket.sendto(package, client_socket)
 

@@ -34,7 +34,8 @@ def createPackage(seqnum, message):
     nsec = (nsec).to_bytes(4, byteorder = 'big')
     sz = (len(message)).to_bytes(2, byteorder = 'big')
     hashed_md5 = create_md5(message)
-    package = seqnum + sec + nsec + sz + message.encode('ascii') + hashed_md5
+    package = seqnum + sec + nsec + sz + message.encode('latin1') + hashed_md5
+    print("Package a ser enviada:\n seqnum: {} \n sec: {} \n nsec: {} \n sz: {} \n message: {} \n md5: {} ".format(seqnum, sec, nsec, sz, message, hashed_md5))
     
     return package
 def returnTuple(dest):
@@ -169,7 +170,7 @@ def main():
             print("count " + str(count))
             if(seqnum % SWS == 0 and seqnum != 0):
                 sendPackage(udp,SW,seqnum)
-                print("ENVIEI PACOTE 1")
+                print("ENVIEI PACOTE #{}".format(seqnum))
                 n_distinct_logs = n_distinct_logs + 1
                 n_sent_logs = n_distinct_logs
                 serverSocket(udp,SWS,SW,sent_pck_wdw)
@@ -177,7 +178,7 @@ def main():
                 
             elif(line == ""):
                 sendPackage(udp,SW,seqnum)
-                print("ENVIEI PACOTE 2")
+                print("ENVIEI PACOTE #{}".format(seqnum))
                 n_distinct_logs = n_distinct_logs + 1
                 n_sent_logs = n_distinct_logs
                 serverSocket(udp,SWS,SW,sent_pck_wdw)
@@ -203,4 +204,4 @@ def main():
 if __name__ == "__main__":
     main()
     print ("Término da execução")
-#python3 cliente.py input.txt 127.0.0.1:5000 5 10 0.85
+#python3 sw_cliente.py input.txt 127.0.0.1:5000 5 10 0.85
