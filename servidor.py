@@ -33,10 +33,10 @@ import sys
 import threading
 import pdb
 
-def create_md5(message):
-	return hashlib.md5(message.encode('latin1')).digest()
 
 def create_md5(package):
+	print("Package: {}".format(package))
+	#pdb.set_trace()
 	checksum = hashlib.md5()
 	checksum.update(package)
 	return checksum.digest()
@@ -61,8 +61,8 @@ def receive_message(seqnum, message, md5, test_md5):
 	global SW
 	global LFA
 	print("")
-	print("Mensagem #{} recebida no servidor: {}".format(seqnum, message))
-	print("RWS: {} NFE: {} LFA: {} SW: {}".format(RWS, NFE, LFA, SW))
+	#print("Mensagem #{} recebida no servidor: {}".format(seqnum, message))
+	#print("RWS: {} NFE: {} LFA: {} SW: {}".format(RWS, NFE, LFA, SW))
 	# A mensagem só é relevante para nós se seu seqnum está dentro da janela e seu md5 é válido. Caso contrário, ela é descartada.
 	#if(valid_md5(message, md5) and (seqnum >= NFE and seqnum <= LFA)):
 
@@ -73,7 +73,7 @@ def receive_message(seqnum, message, md5, test_md5):
 	if(valid_md5(md5, test_md5) and (seqnum <= LFA)):
 		# Se a mensagem já foi ack, simplesmente retornamos True pra reenviar o ACK
 		if(seqnum < NFE):
-			print("Mensagem já ACK. Retornamos True")
+			print("Mensagem {} já foi ACK".format(seqnum))
 			return True
 		# Adicionamos a mensagem na janela
 		SW[seqnum] = message
@@ -85,7 +85,7 @@ def receive_message(seqnum, message, md5, test_md5):
 			NFE = NFE + 1
 			LFA = LFA + 1
 			SW.append("")
-			print("\nPrinting {} to file -- Janela movida: {} – {} -> {} – {}".format(SW[NFE-1], NFE-1, LFA-1, NFE, LFA))
+			print("\nEscrevendo {} no arquivo -- Janela movida: {} – {} -> {} – {}".format(SW[NFE-1], NFE-1, LFA-1, NFE, LFA))
 
 		# Printa nova janela
 		print("\nRWS: {} NFE: {} LFA: {} SW: {}".format(RWS, NFE, LFA, SW))
@@ -95,7 +95,7 @@ def receive_message(seqnum, message, md5, test_md5):
 
 	# Retornamos False se a mensagem foi descartada
 	if(valid_md5(md5, test_md5) == False):
-		print("ERRO: MD5 inválido. \n Mensagem recebida: {} \n Recebido: {} \n Criado: {}".format(message, md5, create_md5(message)))
+		print("ERRO: MD5 inválido.")
 	if(seqnum > LFA):
 		print("ERRO: SeqNum ({}) > LFA({})".format(seqnum, LFA))
 	return False
@@ -120,7 +120,7 @@ def client_worker(client_socket, request):
 
 
 
-	print("Request recebida @{}:\n seqnum: {} \n sec: {} \n nsec: {} \n sz: {} \n message: {} \n md5: {} ".format(client_socket, seqnum, sec, nsec, sz, message, md5))
+	#print("Request recebida @{}:\n seqnum: {} \n sec: {} \n nsec: {} \n sz: {} \n message: {} \n md5: {} ".format(client_socket, seqnum, sec, nsec, sz, message, md5))
 	# Se a mensagem foi recebida com sucesso, enviamos a confirmação
 	if(receive_message(seqnum, message, md5, test_md5) == True):
 		int_seqnum = seqnum
@@ -141,7 +141,7 @@ def client_worker(client_socket, request):
 		# Aqui forcamos um erro baseado em probabilidade. Caso o md5 deva ser enviado errado, simplesmente tiramos o md5 do md5 
 		if(random.random() <= Perror):
 			ack_md5 = (1231231231231231).to_bytes(16, byteorder = 'big')
-			print("Erro forcado p error MD5: {}".format(ack_md5))
+			print("Forçou um erro no MD5: {}".format(ack_md5))
 		else:
 			ack_md5 = create_md5(seqnum + sec + nsec)
 
