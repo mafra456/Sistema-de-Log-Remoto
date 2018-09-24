@@ -1,207 +1,197 @@
-# -*- coding: latin1 -*-
+import 	threading
 import socket
 import sys
+import os
 import struct
 import time
 import hashlib
+import random
 import numpy as np
-
-global SWS
-global LAR
-global LFS
-global SW
-global n_distinct_logs
-global n_sent_logs
-global n_failed_md5_logs
-
-def create_md5(message):
-    return hashlib.md5(message.encode('latin1')).digest()
+import threading
+import pdb
+import traceback
 
 
-def valid_md5(message, md5):
-    return create_md5(message) == md5
+''' 
+INT 8 bytes – Número de sequencia
+começa em 0 e incrementa
+INT 8 bytes & INT 4 byets Timestamp 
+o primeiro inteiro representa a quantidade de segundos desde a data de 
+referência do período corrente, e o segundo inteiro a quantidade de 
+nanosegundos desde o início do segundo atual (armazenado no primeiro inteiro).
+INT 2 bytes - Tamanho da mensagem
+String latin1 Mensagem – Deve ser menor que 2^14 bytes
+hash MD5 16 bytes - calculador sobre os 4campos antreriores
+Cliente:
+Envia mensagem ao cliente
+Checa md5 do ACK recebido
+Se sucesso:
+	confirma recebimento e encerra thread
+''' 
+n_sent_logs = 0
+n_failed_md5_logs = 0
+n_distinct_logs = 0
+num_ret = 0
+lock = threading.Lock()
 
+def create_md5(package):
+	checksum = hashlib.md5()
+	checksum.update(package)
+	return checksum.digest()
 
-def createPackage(seqnum, message):
+def valid_md5(md5, test_md5):
+	return test_md5 == md5
 
-    seqnum = (seqnum).to_bytes(8, byteorder = 'big')
-    sec,nsec = str(time.time()).split('.')
+def checkUnreceivedACK(received):
+	for index in range(len(received)):
+		if(received[index] == 0): 
+			return index
+	return -1
 
-    sec = int(sec)
-    nsec = int(nsec)
+def createPackage(seqnum, message, Perror):
 
-    sec = (sec).to_bytes(8, byteorder = 'big')
-    nsec = (nsec).to_bytes(4, byteorder = 'big')
-    sz = (len(message)).to_bytes(2, byteorder = 'big')
-    hashed_md5 = create_md5(message)
-    package = seqnum + sec + nsec + sz + message.encode('latin1') + hashed_md5
-    print("Package a ser enviada:\n seqnum: {} \n sec: {} \n nsec: {} \n sz: {} \n message: {} \n md5: {} ".format(seqnum, sec, nsec, sz, message, hashed_md5))
+	seqnum = (seqnum).to_bytes(8, byteorder = 'big')
+	sec,nsec = str(time.time()).split('.')
+
+	sec = int(sec)
+	nsec = int(nsec)
+
+	sec = (sec).to_bytes(8, byteorder = 'big')
+	nsec = (nsec).to_bytes(4, byteorder = 'big')
+	sz = (len(message)).to_bytes(2, byteorder = 'big')
+	new_message = message
+	if(random.random() <= Perror):
+		hashed_md5 = (1231231231231231).to_bytes(16, byteorder = 'big')
+	else:
+		hashed_md5 = create_md5(seqnum + sec + nsec + sz + message.encode('latin1'))
+
+	package = seqnum + sec + nsec + sz + message.encode('latin1') + hashed_md5
     
-    return package
+	return package
+
+def sendPackage(udp, dest, messages, p, received, Perror, Tout):
+	try:
+		global n_sent_logs
+		global n_failed_md5_logs
+		global num_ret
+		package = createPackage(p + 1, messages[p], Perror)
+		udp.sendto(package, dest)
+
+		lock.acquire()
+		n_sent_logs = n_sent_logs + 1
+		lock.release()
+		
+		while(received[p] == 0):
+			#Recebimento de resposta do servidor (ACK)
+			response, address = udp.recvfrom(36)	
+			res_seqnum = int.from_bytes(response[:8], byteorder='big')
+			res_sec = int.from_bytes(response[8:16], byteorder='big')
+			res_nsec = int.from_bytes(response[16:20], byteorder='big')	
+			server_md5 = response[20:36]
+			sz = int.from_bytes(package[20:22], byteorder='big')
+			msg_end = sz + 22
+			msg_decoded = (package[22:msg_end]).decode('latin1')
+
+			# Cria md5 para conferir com o recebido
+			test_ack_md5 = create_md5(response[:8] + response[8:16] + response[16:20])
+
+			seqnum_response = struct.unpack('!q', response[:8])[0] - 1
+			if(valid_md5(test_ack_md5, server_md5)):
+				lock.acquire()
+				received[seqnum_response] = 1
+				lock.release()
+			else:
+				time.sleep(int(Tout))
+				package = createPackage(p + 1, messages[p], Perror)
+
+				udp.sendto(package, dest)
+				print("Retransmitindo")
+				num_ret = num_ret + 1
+
+
+				lock.acquire()
+				n_sent_logs = n_sent_logs + 1
+				n_failed_md5_logs = n_failed_md5_logs + 1
+				lock.release()
+				
+
+	except Exception as e:
+		traceback.print_exc()
+		if(received[p] == 0):
+			num_ret = num_ret + 1
+			sendPackage(udp, dest, messages, p, received, Perror, Tout)
+
 def returnTuple(dest):
-    #...
-    split = np.empty(2,dtype=object)
-    split[0] = list()
-    split[1] = list()
-    HOST = ""
-    PORT = ""
-    i = 0
-    for s in dest:
-        if(s == ':'):
-            i = 1
-        else:
-            split[i] += s
-    HOST = ''.join(split[0])
-    PORT = ''.join(split[1])
-    PORT = int(PORT)
-    return HOST, PORT
-
-def returnSeqPackage(SW,SWS,response):
-    match = 0
-    #print("SW" + str(len(SW)))
-    for i in range(len(SW)):#while(match == 0 or i < SWS):
-        package = createPackage(i, SW[i])
-        rsp = int.from_bytes(response[:8], byteorder='big')
-        pck = int.from_bytes(package[:8], byteorder='big')
-        print("rsp " + str(rsp))
-        print("esperado " + str(pck))
-        if(rsp == pck):
-            match = 1
-            return i, package
-    return -1, "this ack is not valid"
-        
-    #if(match == 0):
-    #    return 99
-    # else:
-    #     return i
-
-def sendPackage(udp,SW,seqnum):
-    for p in range(len(SW)):
-        package = createPackage(seqnum, SW[p])
-        udp.send(package)
-        LFS = package[:8] #ultimo quadro enviado (Tenho que conferir se ele enviou todos?)
-
-def serverSocket(udp,SWS,SW,sent_pck_wdw):
-    print("entrou")
-    to_receive = 0
-    while(True):
-        if(to_receive == sent_pck_wdw):
-            break;            
-        response, address = udp.recvfrom(36)
-        print("RECEBEU UM ACK")
-        print(response)
-        index, package = returnSeqPackage(SW,SWS,response)
-        print("returncode" + str(index))
-
-        if(index != -1):
-            to_receive = to_receive + 1
-            LAR = package[:8]#ultimo quadro recebido	
-            md5 = (response[20:36])
-            sz = int.from_bytes(package[20:22], byteorder='big')
-            msg_end = sz + 22
-            msg_decoded = (package[22:msg_end]).decode('latin1')
-            if(valid_md5(msg_decoded, md5)):
-                print("md5 validated")
-                res_seqnum = int.from_bytes(response[:8], byteorder='big')
-                res_sec = int.from_bytes(response[8:16], byteorder='big')
-                res_nsec = int.from_bytes(response[16:20], byteorder='big')
-                print("ACK #{} recebido".format(res_seqnum)) 
-            else:
-                print("falha no MD5 recebido")
-                #n_failed_md5_logs = n_failed_md5_logs + 1
-
-        elif(index == -1):
-            to_receive = to_receive + 1
-            package = createPackage(index, SW[index])
-            udp.send(package)
-            print("RETRANSMITIU")
-            n_sent_logs = n_sent_logs + 1
-            r_SW = []
-            r_SW.append(SW[i])
-            serverSocket(udp,1,r_SW)	
+	split = np.empty(2,dtype=object)
+	split[0] = list()
+	split[1] = list()
+	HOST = ""
+	PORT = ""
+	i = 0
+	for s in dest:
+		if(s == ':'):
+			i = 1
+		else:
+			split[i] += s
+	HOST = ''.join(split[0])
+	PORT = ''.join(split[1])
+	PORT = int(PORT)
+	return HOST, PORT
 
 def main():
-    t_start = time.time()
-    #PARAMS
-    param = sys.argv[1:] 
-    filename = param[0]
-    dest = param[1]
-    HOST, PORT = returnTuple(dest)
-    Wtx = param[2]
-    Tout = param[3]
-    Perror = param[4]
+	t_start = time.time()
+	#Parametros
+	param = sys.argv[1:] 
+	filename = param[0]
+	dest = param[1]
+	HOST, PORT = returnTuple(dest)
+	Wtx = param[2]
+	Tout = param[3]
+	Perror = float(param[4])
 
-    # Variaveis da Janela Deslizante
+	#Escreve na tela
+	print("Conectando com: " + dest)
+	print("Tamanho da Janela: " + Wtx)
+	print("Probabilidade de erro: " + str(Perror))
 
-    # Tamanho da janela
-    SWS = int(Wtx)
-    # Ultima confirmacao recebida
-    LAR = 0
-    # Ultimo quadro enviado
-    LFS = 0
-    # Janela
-    SW = [""] * SWS    
-    #SW = bytearray()
+	# Tamanho da janela
+	SWS = int(Wtx)
 
-    file = open(filename,"r")
-    #num_lines = sum(1 for line in file)
-    seqnum = 0
-    sec = 0
-    nsec = 0
-    size_message = 0
-    package = ""
-    sent_pck_wdw = 0
+	global n_sent_logs
+	global n_failed_md5_logs
+	global n_distinct_logs
+	global num_ret
+	
+	udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
+	udp.settimeout(int(Tout))
+	dest = (HOST, int(PORT))
+	
+	file = open(filename,"r", encoding = "latin1")
+	lines = file.read().split('\n')
+	n_distinct_logs = len(lines)
+	threads = [None] * len(lines)
+	received = np.zeros(len(lines))
+	message = checkUnreceivedACK(received)
 
-    try:
-        socket.setdefaulttimeout(int(Tout))
-        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
-        print(HOST)
-        print(PORT)
-        dest = (HOST, PORT)
-        udp.connect(dest)
-        print('Conectado! Para sair, use CTRL+X\n')
-        n_distinct_logs = 0
-        n_sent_logs = 0
-        n_failed_md5_logs = 0
-        count = 0
-        while True:
-            line = file.readline()
-            count = count + 1
-            print("count " + str(count))
-            if(seqnum % SWS == 0 and seqnum != 0):
-                sendPackage(udp,SW,seqnum)
-                print("ENVIEI PACOTE #{}".format(seqnum))
-                n_distinct_logs = n_distinct_logs + 1
-                n_sent_logs = n_distinct_logs
-                serverSocket(udp,SWS,SW,sent_pck_wdw)
-                sent_pck_wdw = 0
-                
-            elif(line == ""):
-                sendPackage(udp,SW,seqnum)
-                print("ENVIEI PACOTE #{}".format(seqnum))
-                n_distinct_logs = n_distinct_logs + 1
-                n_sent_logs = n_distinct_logs
-                serverSocket(udp,SWS,SW,sent_pck_wdw)
-                sent_pck_wdw = 0
-                print("file finished")
-                break
-            
-            else:
-                message = line
-                SW.append(message)
-                sent_pck_wdw = sent_pck_wdw + 1
-                #print(type(SW[0]))
+	for p in range(len(threads)):
+		threads[p] = threading.Thread(target=sendPackage, args=(udp,dest,lines,p,received,Perror,Tout))
 
-            seqnum = seqnum + 1
-            print("seqnum " + str(seqnum))
-            
-        print(str(n_distinct_logs) + " " + str(n_sent_logs) + " " + str(n_failed_md5_logs) + " %.3f"%(time.time()-t_start)) #+ " %.3f"%(time.time()-t_start)
+		if(threading.active_count() > SWS):
+			while(received[message] == 0):
+				pass
+			message = checkUnreceivedACK(received)
+		
+		threads[p] = threads[p].start()
 
-    except(socket.timeout):
-        print("Tempo limite de conexão excedido")
-        pass
+	# O cliente para quando todos as mensagens sao enviadas
+	while(checkUnreceivedACK(received) != -1):
+		pass
+				
+	udp.close()
+
+	print(str(n_distinct_logs) + " " + str(n_sent_logs) + " " + str(n_failed_md5_logs) + " %.3f"%(time.time()-t_start))
+	print("Retransmissoes: " + str(num_ret))
 
 if __name__ == "__main__":
     main()
-    print ("Término da execução")
-#python3 sw_cliente.py input.txt 127.0.0.1:5000 5 10 0.85
+    print ("Termino da execucao")
