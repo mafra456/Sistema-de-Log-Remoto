@@ -8,6 +8,9 @@ import hashlib
 import random
 import numpy as np
 import threading
+import pdb
+import traceback
+
 
 ''' 
 INT 8 bytes – Número de sequencia
@@ -36,8 +39,8 @@ def create_md5(package):
 	checksum.update(package)
 	return checksum.digest()
 
-def valid_md5(message, md5):
-    return create_md5(message) == md5
+def valid_md5(md5, test_md5):
+	return test_md5 == md5
 
 def checkUnreceivedACK(received):
 	for index in range(len(received)):
@@ -58,8 +61,8 @@ def createPackage(seqnum, message,md5_incorrect):
 	sz = (len(message)).to_bytes(2, byteorder = 'big')
 	if(md5_incorrect == 1):
 		message = ''.join(random.sample(message,len(message)))
-	hashed_md5 = create_md5(seqnum + sec + nsec + sz + message.encode('ascii'))
-	package = seqnum + sec + nsec + sz + message.encode('ascii') + hashed_md5
+	hashed_md5 = create_md5(seqnum + sec + nsec + sz + message.encode('latin1'))
+	package = seqnum + sec + nsec + sz + message.encode('latin1') + hashed_md5
     
 	return package
 
@@ -72,13 +75,12 @@ def sendPackage(udp, dest, messages, p, received, Perror, Tout):
 		if(random.random() < Perror):
 			md5_incorrect = 1
 		package = createPackage(p + 1, messages[p], md5_incorrect)
-		udp.connect(dest)
-		udp.send(package)
+		udp.sendto(package, dest)
 
 		lock.acquire()
 		n_sent_logs = n_sent_logs + 1
 		lock.release()
-
+		print("Received: {}".format(received))
 		while(received[p] == 0):
 			#Recebimento de resposta do servidor (ACK)
 			response, address = udp.recvfrom(36)	
@@ -90,16 +92,20 @@ def sendPackage(udp, dest, messages, p, received, Perror, Tout):
 			msg_end = sz + 22
 			msg_decoded = (package[22:msg_end]).decode('latin1')
 
-			if(valid_md5(msg_decoded, server_md5)):
+			# Cria md5 para conferir com o recebido
+			test_ack_md5 = create_md5(response[:8] + response[8:16] + response[16:20])
+
+			receivedMessageNum = struct.unpack('!q', response[:8])[0] - 1
+			if(valid_md5(test_ack_md5, server_md5)):
 				lock.acquire()
-				received[res_seqnum] = 1
+				received[receivedMessageNum] = 1
 				lock.release()
 			else:
 				time.sleep(Tout)
 				package = createPackage(p + 1, messages[p], md5_incorrect)
 
-				udp.connect(dest)
-				udp.send(package)
+				udp.sendto(package, dest)
+
 
 				lock.acquire()
 				n_sent_logs = n_sent_logs + 1
@@ -108,7 +114,8 @@ def sendPackage(udp, dest, messages, p, received, Perror, Tout):
 				
 
 	except Exception as e:
-		print(e)
+		traceback.print_exc()
+		#pdb.set_trace()
 		if(received[p] == 0):
 			print("Retransmitindo")
 			num_ret = num_ret + 1
@@ -156,13 +163,13 @@ def main():
 	
 	udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
 	udp.settimeout(int(Tout))
-	dest = (HOST, PORT)
+	dest = (HOST, int(PORT))
 	
-	file = open(filename,"r")
+	file = open(filename,"r", encoding = "latin1")
 	lines = file.read().split('\n')
 	n_distinct_logs = len(lines)
 	threads = [None] * len(lines)
-	received = np.zeros(len(lines))
+	received = np.zeros(len(lines) + 1)
 	message = checkUnreceivedACK(received)
 
 	for p in range(len(threads)):
