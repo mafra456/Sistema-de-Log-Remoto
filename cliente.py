@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import  threading
+=======
+import threading
+>>>>>>> 926a8cb1270cc68578b140f37d8d6b0c777e43ae
 import socket
 import sys
 import os
@@ -27,6 +31,7 @@ Envia mensagem ao cliente
 Checa md5 do ACK recebido
 Se sucesso:
     confirma recebimento e encerra thread
+
 ''' 
 n_sent_logs = 0
 n_failed_md5_logs = 0
