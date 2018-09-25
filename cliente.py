@@ -1,12 +1,8 @@
-<<<<<<< HEAD
-import  threading
-=======
 import threading
->>>>>>> 926a8cb1270cc68578b140f37d8d6b0c777e43ae
+import threading
 import socket
 import sys
 import os
-import struct
 import time
 import hashlib
 import random
@@ -14,7 +10,6 @@ import numpy as np
 import threading
 import pdb
 import traceback
-
 
 ''' 
 INT 8 bytes – Número de sequencia
@@ -40,9 +35,9 @@ num_ret = 0
 lock = threading.Lock()
 
 def create_md5(package):
-    checksum = hashlib.md5()
-    checksum.update(package)
-    return checksum.digest()
+    m = hashlib.md5()
+    m.update(package)
+    return m.digest()
 
 def valid_md5(md5, test_md5):
     return test_md5 == md5
@@ -87,7 +82,7 @@ def sendPackage(udp, dest, messages, p, received, Perror, Tout):
         lock.release()
         
         while(received[p] == 0):
-            #Recebimento de resposta do servidor (ACK)
+            #Recebimento de resposta do servidor(ACK)
             response, address = udp.recvfrom(36)    
             res_seqnum = int.from_bytes(response[:8], byteorder='big')
             res_sec = int.from_bytes(response[8:16], byteorder='big')
@@ -100,7 +95,8 @@ def sendPackage(udp, dest, messages, p, received, Perror, Tout):
             # Cria md5 para conferir com o recebido
             test_ack_md5 = create_md5(response[:8] + response[8:16] + response[16:20])
 
-            seqnum_response = struct.unpack('!q', response[:8])[0] - 1
+            seqnum_response = res_seqnum - 1
+
             if(valid_md5(test_ack_md5, server_md5)):
                 lock.acquire()
                 received[seqnum_response] = 1
@@ -110,9 +106,8 @@ def sendPackage(udp, dest, messages, p, received, Perror, Tout):
                 package = createPackage(p + 1, messages[p], Perror)
 
                 udp.sendto(package, dest)
-                print("Retransmitindo")
+                print("Retransmitindo mensagem #{}".format(p + 1))
                 num_ret = num_ret + 1
-
 
                 lock.acquire()
                 n_sent_logs = n_sent_logs + 1
@@ -121,9 +116,10 @@ def sendPackage(udp, dest, messages, p, received, Perror, Tout):
                 
 
     except Exception as e:
-        #traceback.print_exc()
         if(received[p] == 0):
             num_ret = num_ret + 1
+            n_failed_md5_logs = n_failed_md5_logs + 1
+            print("Retransmitindo mensagem #{}".format(p + 1))
             sendPackage(udp, dest, messages, p, received, Perror, Tout)
 
 def returnTuple(dest):
@@ -145,6 +141,7 @@ def returnTuple(dest):
 
 def main():
     t_start = time.time()
+    
     #Parametros
     param = sys.argv[1:] 
     filename = param[0]
@@ -188,7 +185,7 @@ def main():
         
         threads[p] = threads[p].start()
 
-    # O cliente para quando todos as mensagens sao enviadas
+    # A execucao termina quando todas as mensagens sao enviadas e tem seu recebimento confirmado
     while(checkUnreceivedACK(received) != -1):
         pass
                 
