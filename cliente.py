@@ -72,6 +72,7 @@ def sendPackage(udp, dest, messages, p, received, Perror, Tout):
         global n_sent_logs
         global n_failed_md5_logs
         global num_ret
+
         package = createPackage(p + 1, messages[p], Perror)
         udp.sendto(package, dest)
 
@@ -171,7 +172,7 @@ def main():
     n_distinct_logs = len(lines)
     threads = [None] * len(lines)
     received = np.zeros(len(lines))
-    message = checkUnreceivedACK(received)
+    message = 0
 
     for p in range(len(threads)):
         threads[p] = threading.Thread(target=sendPackage, args=(udp,dest,lines,p,received,Perror,Tout))
@@ -179,6 +180,7 @@ def main():
         if(threading.active_count() > SWS):
             while(received[message] == 0):
                 pass
+            #Seleciona a nova mensagem sem ack a ser checada
             message = checkUnreceivedACK(received)
         
         threads[p] = threads[p].start()
